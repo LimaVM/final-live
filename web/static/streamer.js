@@ -281,6 +281,9 @@ async function handleServerMessage(data) {
         case 'viewer-left':
             handleViewerLeft(data);
             break;
+        case 'viewer-count':
+            viewerCount.textContent = data.count || 0;
+            break;
         case 'error':
             console.error('❌ Erro do servidor:', data.message);
             alert(data.message);
