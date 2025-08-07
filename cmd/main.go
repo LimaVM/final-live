@@ -35,7 +35,7 @@ func main() {
 
 	// Configuração de logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	
+
 	fmt.Println("🚀 DEVLIMA MOTOSTREAM - SERVIDOR GO INICIANDO...")
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Printf("📅 Data/Hora: %s\n", time.Now().Format("02/01/2006 15:04:05"))
@@ -54,12 +54,12 @@ func main() {
 	if *devMode {
 		fmt.Printf("🌐 Servidor de desenvolvimento rodando na porta %s\n", defaultDevPort)
 		fmt.Printf("🔗 Acesso: http://localhost:%s\n", defaultDevPort)
-		
+
 		httpServer := &http.Server{
 			Addr:    ":" + defaultDevPort,
 			Handler: srv.Handler(),
 		}
-		
+
 		log.Fatal(httpServer.ListenAndServe())
 		return
 	}
@@ -79,7 +79,7 @@ func main() {
 			if host == "" {
 				host = "localhost"
 			}
-			
+
 			// Remove porta se presente
 			if colonIndex := len(host) - 1; colonIndex > 0 {
 				for i := colonIndex; i >= 0; i-- {
@@ -89,7 +89,7 @@ func main() {
 					}
 				}
 			}
-			
+
 			httpsURL := fmt.Sprintf("https://%s%s", host, r.RequestURI)
 			log.Printf("🔄 Redirecionamento HTTP→HTTPS: %s → %s", r.URL.String(), httpsURL)
 			http.Redirect(w, r, httpsURL, http.StatusMovedPermanently)
@@ -105,6 +105,7 @@ func main() {
 			TLSConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			},
+			TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
 		}
 		fmt.Printf("🔒 Certificados SSL encontrados\n")
 		fmt.Printf("   Certificado: %s\n", *certFile)
@@ -167,4 +168,3 @@ func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
 }
-

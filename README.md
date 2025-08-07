@@ -30,12 +30,27 @@ Este projeto foi **completamente refatorado** usando **Go no backend** e **JavaS
 ## 🔧 **Como Usar:**
 
 ### **Compilação:**
-```bash
-# Instalar Go (já incluído no projeto)
-cd motostream_go
 
-# Compilar o projeto
+#### **Ubuntu 22.04+**
+```bash
+sudo apt update
+sudo apt install -y git golang
+git clone https://github.com/devlima/motostream_go.git
+cd motostream_go
 go build -o motostream ./cmd/main.go
+```
+
+#### **Arch Linux**
+```bash
+sudo pacman -Sy --noconfirm git go
+git clone https://github.com/devlima/motostream_go.git
+cd motostream_go
+go build -o motostream ./cmd/main.go
+```
+
+#### **Verificação**
+```bash
+go test ./...
 ```
 
 ### **Execução:**
