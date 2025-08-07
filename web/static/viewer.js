@@ -44,8 +44,11 @@ let peerConnection = null;
 let isConnected = false;
 let startTime = null;
 let durationInterval = null;
-let reconnectAttempts = 0;
+let reconnectAttempts = 0; // WebSocket reconnection attempts
 const maxReconnectAttempts = 5;
+let rtcReconnectAttempts = 0; // WebRTC reconnection attempts
+const maxRtcReconnectAttempts = 3;
+let pendingCandidates = [];
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
@@ -272,9 +275,18 @@ async function handleStreamData(streamData) {
         switch (streamType) {
             case 'offer':
                 await handleOffer(streamData.offer);
+                // processa candidatos ICE recebidos antes da oferta
+                for (const c of pendingCandidates) {
+                    await handleIceCandidate(c);
+                }
+                pendingCandidates = [];
                 break;
             case 'ice-candidate':
-                await handleIceCandidate(streamData.candidate);
+                if (!peerConnection || !peerConnection.remoteDescription) {
+                    pendingCandidates.push(streamData.candidate);
+                } else {
+                    await handleIceCandidate(streamData.candidate);
+                }
                 break;
         }
     } catch (error) {
@@ -323,20 +335,23 @@ async function createPeerConnection() {
     pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
         console.log('🔗 Estado da conexão WebRTC:', state);
-        
+
         switch (state) {
             case 'connected':
                 updateConnectionStatus('connected', 'Assistindo transmissão');
                 isConnected = true;
+                rtcReconnectAttempts = 0;
                 break;
             case 'disconnected':
                 updateConnectionStatus('connecting', 'Reconectando...');
                 isConnected = false;
+                restartPeerConnection();
                 break;
             case 'failed':
                 updateConnectionStatus('disconnected', 'Falha na conexão');
                 isConnected = false;
                 showOfflineMessage('Falha na conexão WebRTC');
+                restartPeerConnection();
                 break;
             case 'closed':
                 updateConnectionStatus('disconnected', 'Conexão fechada');
@@ -354,6 +369,9 @@ async function createPeerConnection() {
     
     pc.oniceconnectionstatechange = () => {
         console.log('🧊 ICE connection state:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'failed') {
+            restartPeerConnection();
+        }
     };
     
     console.log('✅ Conexão WebRTC criada');
@@ -397,6 +415,34 @@ async function handleIceCandidate(candidate) {
     } catch (error) {
         console.error('❌ Erro ao adicionar ICE candidate:', error);
     }
+}
+
+function restartPeerConnection() {
+    if (peerConnection) {
+        try {
+            peerConnection.ontrack = null;
+            peerConnection.onicecandidate = null;
+            peerConnection.onconnectionstatechange = null;
+            peerConnection.oniceconnectionstatechange = null;
+            peerConnection.close();
+        } catch (e) {
+            console.error('❌ Erro ao fechar conexão WebRTC:', e);
+        }
+    }
+    peerConnection = null;
+    pendingCandidates = [];
+
+    if (rtcReconnectAttempts >= maxRtcReconnectAttempts) {
+        console.warn('⚠️  Limite de tentativas de reconexão ICE atingido');
+        return;
+    }
+
+    rtcReconnectAttempts++;
+    setTimeout(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            joinLive();
+        }
+    }, 1000);
 }
 
 async function joinLive() {
