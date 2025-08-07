@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -21,7 +24,7 @@ type Server struct {
 func New() *Server {
 	streamManager := stream.NewManager()
 	wsHandler := websocket.NewHandler(streamManager)
-	
+
 	return &Server{
 		streamManager: streamManager,
 		wsHandler:     wsHandler,
@@ -31,20 +34,20 @@ func New() *Server {
 // Handler retorna o handler HTTP principal
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	
+
 	// WebSocket endpoint
 	mux.HandleFunc("/ws", s.handleWebSocket)
-	
+
 	// API endpoints
 	mux.HandleFunc("/api/stats", s.handleStats)
-	
+
 	// Páginas principais
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/live/", s.handleLive)
-	
+
 	// Arquivos estáticos
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-	
+
 	// Middleware de logging
 	return loggingMiddleware(corsMiddleware(mux))
 }
@@ -53,18 +56,18 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	clientIP := getClientIP(r)
 	userAgent := r.Header.Get("User-Agent")
-	
+
 	log.Printf("🔌 NOVA CONEXÃO WEBSOCKET")
 	log.Printf("   IP: %s", clientIP)
 	log.Printf("   User-Agent: %s", truncateString(userAgent, 100))
-	
+
 	s.wsHandler.HandleConnection(w, r)
 }
 
 // handleStats retorna estatísticas do servidor
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	stats := s.streamManager.GetStats()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
 }
@@ -75,10 +78,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	
+
 	clientIP := getClientIP(r)
 	log.Printf("🏠 Acesso à página inicial de %s", clientIP)
-	
+
 	http.ServeFile(w, r, "web/static/index.html")
 }
 
@@ -89,35 +92,35 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	
+
 	// Extrai o ID da live
 	liveID := strings.Split(path, "/")[0]
 	if liveID == "" {
 		http.NotFound(w, r)
 		return
 	}
-	
+
 	// Evita servir arquivos JavaScript como HTML
 	if strings.HasSuffix(liveID, ".js") || strings.HasSuffix(liveID, ".css") {
 		http.NotFound(w, r)
 		return
 	}
-	
+
 	clientIP := getClientIP(r)
-	
+
 	// Verifica se é streamer ou espectador
 	if r.URL.Query().Get("camera") != "" {
 		log.Printf("🎥 ACESSO PÁGINA STREAMER")
 		log.Printf("   Live ID: %s", liveID)
 		log.Printf("   IP: %s", clientIP)
 		log.Printf("   Camera: %s", r.URL.Query().Get("camera"))
-		
+
 		http.ServeFile(w, r, "web/static/streamer.html")
 	} else {
 		log.Printf("👥 ACESSO PÁGINA ESPECTADOR")
 		log.Printf("   Live ID: %s", liveID)
 		log.Printf("   IP: %s", clientIP)
-		
+
 		http.ServeFile(w, r, "web/static/live.html")
 	}
 }
@@ -126,15 +129,15 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		
+
 		// Wrapper para capturar status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
-		
+
 		next.ServeHTTP(wrapped, r)
-		
+
 		duration := time.Since(start)
 		clientIP := getClientIP(r)
-		
+
 		// Log apenas para requisições não estáticas
 		if !strings.HasPrefix(r.URL.Path, "/static/") && r.URL.Path != "/favicon.ico" {
 			log.Printf("📡 %s %s %d %v %s", r.Method, r.URL.Path, wrapped.statusCode, duration, clientIP)
@@ -148,12 +151,12 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -169,6 +172,15 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Hijack implements the http.Hijacker interface by delegating to the underlying ResponseWriter.
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := rw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("response writer does not implement http.Hijacker")
+	}
+	return h.Hijack()
+}
+
 // getClientIP extrai o IP real do cliente
 func getClientIP(r *http.Request) string {
 	// Verifica headers de proxy
@@ -178,7 +190,7 @@ func getClientIP(r *http.Request) string {
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
 	}
-	
+
 	// IP direto
 	return strings.Split(r.RemoteAddr, ":")[0]
 }
@@ -190,4 +202,3 @@ func truncateString(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
-
