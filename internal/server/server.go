@@ -36,31 +36,25 @@ func New() *Server {
 
 // Handler retorna o handler HTTP principal
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
+        mux := http.NewServeMux()
 
-	// API endpoints
-	mux.HandleFunc("/api/stats", s.handleStats)
+        // API endpoints
+        mux.HandleFunc("/api/stats", s.handleStats)
 
-	// Páginas principais
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/live/", s.handleLive)
+        // Páginas principais
+        mux.HandleFunc("/", s.handleIndex)
+        mux.HandleFunc("/live/", s.handleLive)
+
+       // Endpoint WebSocket (registrado diretamente no mux)
+       mux.HandleFunc("/ws", s.handleWebSocket)
 
 	// Arquivos estáticos
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	// Segmentos HLS (GET serve arquivos; PUT/POST salva segmentos)
 	mux.HandleFunc("/hls/", s.handleHLS)
 
-	// Middlewares para rotas HTTP comuns
-	wrapped := loggingMiddleware(corsMiddleware(mux))
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/ws" {
-			// Para WebSocket, evitar middlewares que possam quebrar o Hijacker
-			s.handleWebSocket(w, r)
-			return
-		}
-		wrapped.ServeHTTP(w, r)
-	})
+       // Middlewares para rotas HTTP comuns (WebSocket será ignorado internamente)
+       return loggingMiddleware(corsMiddleware(mux))
 }
 
 // handleWebSocket gerencia conexões WebSocket
@@ -198,18 +192,24 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 // corsMiddleware adiciona headers CORS
 func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+               // Não adiciona headers CORS para WebSocket
+               if r.URL.Path == "/ws" {
+                       next.ServeHTTP(w, r)
+                       return
+               }
 
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+               w.Header().Set("Access-Control-Allow-Origin", "*")
+               w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+               w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		next.ServeHTTP(w, r)
-	})
+               if r.Method == "OPTIONS" {
+                       w.WriteHeader(http.StatusOK)
+                       return
+               }
+
+               next.ServeHTTP(w, r)
+        })
 }
 
 // responseWriter wrapper para capturar status code
