@@ -578,6 +578,7 @@ function showOfflineMessage(message) {
     
     // Para o vídeo se estiver reproduzindo
     if (remoteVideo.srcObject) {
+        remoteVideo.pause();
         remoteVideo.srcObject = null;
     }
     
@@ -608,7 +609,7 @@ function showPlayButton() {
     `;
     
     playButton.onclick = () => {
-        remoteVideo.play();
+        remoteVideo.play().catch(() => {});
         playButton.remove();
     };
     

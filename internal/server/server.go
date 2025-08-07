@@ -127,22 +127,28 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 
 // loggingMiddleware adiciona logging às requisições HTTP
 func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                // Não faz wrapping em requisições WebSocket para evitar quebra do upgrade
+                if r.URL.Path == "/ws" {
+                        next.ServeHTTP(w, r)
+                        return
+                }
 
-		// Wrapper para capturar status code
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
+                start := time.Now()
 
-		next.ServeHTTP(wrapped, r)
+                // Wrapper para capturar status code
+                wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
 
-		duration := time.Since(start)
-		clientIP := getClientIP(r)
+                next.ServeHTTP(wrapped, r)
 
-		// Log apenas para requisições não estáticas
-		if !strings.HasPrefix(r.URL.Path, "/static/") && r.URL.Path != "/favicon.ico" {
-			log.Printf("📡 %s %s %d %v %s", r.Method, r.URL.Path, wrapped.statusCode, duration, clientIP)
-		}
-	})
+                duration := time.Since(start)
+                clientIP := getClientIP(r)
+
+                // Log apenas para requisições não estáticas
+                if !strings.HasPrefix(r.URL.Path, "/static/") && r.URL.Path != "/favicon.ico" {
+                        log.Printf("📡 %s %s %d %v %s", r.Method, r.URL.Path, wrapped.statusCode, duration, clientIP)
+                }
+        })
 }
 
 // corsMiddleware adiciona headers CORS
