@@ -109,8 +109,9 @@ function setupInterface() {
     cameraSwitch.addEventListener('change', async (e) => {
         await switchCamera(e.target.value);
     });
-    
+
     // Seletor de qualidade
+    qualitySwitch.value = '1080p';
     qualitySwitch.addEventListener('change', async (e) => {
         await changeQuality(e.target.value);
     });

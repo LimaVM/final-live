@@ -31,6 +31,7 @@ type Connection struct {
 	LiveID    string
 	UserType  string // "streamer" ou "viewer"
 	UserID    string
+	Name      string
 	Connected time.Time
 	LastPing  time.Time
 	send      chan []byte
@@ -204,13 +205,18 @@ func (c *Connection) handleJoin(msg *Message) {
 	c.LiveID = msg.LiveID
 	c.UserType = "viewer"
 	c.UserID = msg.ViewerID
+	c.Name = msg.Name
 	if c.UserID == "" {
 		c.UserID = c.ID
+	}
+	if c.Name == "" {
+		c.Name = c.UserID
 	}
 
 	log.Printf("👥 ESPECTADOR ENTROU NA LIVE")
 	log.Printf("   Live ID: %s", c.LiveID)
 	log.Printf("   User ID: %s", c.UserID)
+	log.Printf("   Nome: %s", c.Name)
 	log.Printf("   IP: %s", c.IP)
 
 	// Registra no gerenciador de streams
@@ -223,6 +229,7 @@ func (c *Connection) handleJoin(msg *Message) {
 				Type:     "viewer-joined",
 				LiveID:   c.LiveID,
 				ViewerID: c.UserID,
+				Name:     c.Name,
 			})
 		}
 	}
@@ -419,6 +426,7 @@ func (h *Handler) unregisterConnection(c *Connection) {
 							Type:     "viewer-left",
 							LiveID:   c.LiveID,
 							ViewerID: c.UserID,
+							Name:     c.Name,
 						})
 					}
 				}
@@ -429,6 +437,7 @@ func (h *Handler) unregisterConnection(c *Connection) {
 				log.Printf("👥 ESPECTADOR DESCONECTOU")
 				log.Printf("   Live ID: %s", c.LiveID)
 				log.Printf("   User ID: %s", c.UserID)
+				log.Printf("   Nome: %s", c.Name)
 				log.Printf("   IP: %s", c.IP)
 			}
 		}

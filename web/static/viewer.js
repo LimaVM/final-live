@@ -21,6 +21,7 @@ const duration = document.getElementById('duration');
 // Configuração
 const liveId = window.location.pathname.split('/')[2];
 const viewerId = 'viewer_' + Math.random().toString(36).substr(2, 9);
+let viewerName = '';
 
 // WebSocket e WebRTC
 const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -48,6 +49,10 @@ const maxReconnectAttempts = 5;
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', async () => {
+    while (!viewerName) {
+        viewerName = prompt('Digite seu nickname:')?.trim() || '';
+    }
+
     try {
         console.log('🚀 Inicializando espectador...');
         await initializeViewer();
@@ -274,6 +279,8 @@ async function handleStreamData(streamData) {
 
 async function createPeerConnection() {
     const pc = new RTCPeerConnection(rtcConfig);
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.addTransceiver('audio', { direction: 'recvonly' });
     
     // Eventos WebRTC
     pc.onicecandidate = (event) => {
@@ -355,6 +362,7 @@ async function handleOffer(offer) {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
         
         const answer = await peerConnection.createAnswer();
+        answer.sdp = setMaxBitrate(answer.sdp, 5000);
         await peerConnection.setLocalDescription(answer);
         
         // Envia resposta para o servidor
@@ -401,7 +409,8 @@ async function joinLive() {
         const message = {
             type: 'join',
             liveId: liveId,
-            viewerId: viewerId
+            viewerId: viewerId,
+            name: viewerName
         };
         
         console.log('📤 Enviando mensagem join:', message);
@@ -424,7 +433,7 @@ function sendChatMessage() {
     ws.send(JSON.stringify({
         type: 'chat',
         liveId: liveId,
-        name: 'Espectador',
+        name: viewerName,
         message: message,
         timestamp: new Date().toISOString()
     }));
@@ -443,11 +452,24 @@ function handleChatMessage(data) {
     
     chatMessages.appendChild(li);
     chatMessages.scrollTop = chatMessages.scrollHeight;
-    
+
+    speakMessage(`${data.name} disse ${data.message}`);
+
     // Limita mensagens
     if (chatMessages.children.length > 100) {
         chatMessages.removeChild(chatMessages.firstChild);
     }
+}
+
+function speakMessage(text) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voices = speechSynthesis.getVoices();
+    let voice = voices.find(v => v.lang.startsWith('pt') && v.name.toLowerCase().includes('male'));
+    if (!voice) {
+        voice = voices.find(v => v.lang.startsWith('pt')) || voices[0];
+    }
+    if (voice) utterance.voice = voice;
+    speechSynthesis.speak(utterance);
 }
 
 function updateViewerCount(count) {
@@ -477,6 +499,10 @@ function updateQualityIndicator() {
     else if (height >= 480) quality = 'SD';
     
     qualityIndicator.textContent = quality;
+}
+
+function setMaxBitrate(sdp, bitrate) {
+    return sdp.replace(/a=mid:video\r\n/g, `a=mid:video\r\nb=AS:${bitrate}\r\n`);
 }
 
 function showVideoPlaceholder() {
