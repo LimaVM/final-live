@@ -33,7 +33,7 @@ Este projeto foi **completamente refatorado** usando **Go no backend** e **JavaS
 #### **Ubuntu 22.04+**
 ```bash
 sudo apt update
-sudo apt install -y git golang
+sudo apt install -y git golang ffmpeg
 git clone https://github.com/devlima/motostream_go.git
 cd motostream_go
 go build -o motostream ./cmd/main.go
@@ -41,7 +41,7 @@ go build -o motostream ./cmd/main.go
 
 #### **Arch Linux**
 ```bash
-sudo pacman -Sy --noconfirm git go
+sudo pacman -Sy --noconfirm git go ffmpeg
 git clone https://github.com/devlima/motostream_go.git
 cd motostream_go
 go build -o motostream ./cmd/main.go
@@ -70,13 +70,16 @@ go test ./...
 - Certificados esperados em: `/etc/letsencrypt/live/devlimassh.shop/`
 
 ### **Gerando segmentos HLS**
-Use o [FFmpeg](https://ffmpeg.org/) para enviar o vídeo do streamer para o diretório de segmentos HLS:
+Use o [FFmpeg](https://ffmpeg.org/) para gerar e enviar os segmentos diretamente ao servidor via **HTTP PUT**:
 
 ```bash
-ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 1 -hls_list_size 4 -hls_flags delete_segments+append_list web/hls/ID_DA_LIVE.m3u8
+ffmpeg -re -i input.mp4 \
+  -c:v libx264 -preset veryfast -c:a aac \
+  -f hls -hls_time 1 -hls_list_size 4 -hls_flags delete_segments+append_list \
+  -method PUT http://seu-dominio.com/hls/ID_DA_LIVE.m3u8
 ```
 
-Os arquivos `.ts` e `.m3u8` serão servidos automaticamente em `https://seu-dominio.com/hls/ID_DA_LIVE.m3u8`.
+O FFmpeg irá enviar o arquivo `.m3u8` e os segmentos `.ts` para o servidor, que os salvará em `web/hls/` e os servirá automaticamente em `https://seu-dominio.com/hls/ID_DA_LIVE.m3u8`.
 
 ### **Parâmetros Opcionais:**
 ```bash

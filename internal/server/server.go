@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -44,8 +47,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Arquivos estáticos
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-	// Segmentos HLS
-	mux.Handle("/hls/", http.StripPrefix("/hls/", http.FileServer(http.Dir("web/hls"))))
+	// Segmentos HLS (GET serve arquivos; PUT/POST salva segmentos)
+	mux.HandleFunc("/hls/", s.handleHLS)
 
 	// Middlewares para rotas HTTP comuns
 	wrapped := loggingMiddleware(corsMiddleware(mux))
@@ -130,6 +133,40 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 		log.Printf("   IP: %s", clientIP)
 
 		http.ServeFile(w, r, "web/static/live.html")
+	}
+}
+
+// handleHLS serve e salva segmentos HLS
+func (s *Server) handleHLS(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/hls/")
+	if path == "" || strings.Contains(path, "..") {
+		http.NotFound(w, r)
+		return
+	}
+
+	fullPath := filepath.Join("web/hls", path)
+
+	switch r.Method {
+	case http.MethodGet:
+		http.ServeFile(w, r, fullPath)
+	case http.MethodPut, http.MethodPost:
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			http.Error(w, "erro ao criar diretório", http.StatusInternalServerError)
+			return
+		}
+		file, err := os.Create(fullPath)
+		if err != nil {
+			http.Error(w, "erro ao criar arquivo", http.StatusInternalServerError)
+			return
+		}
+		defer file.Close()
+		if _, err := io.Copy(file, r.Body); err != nil {
+			http.Error(w, "erro ao salvar arquivo", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
