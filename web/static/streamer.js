@@ -545,13 +545,35 @@ function handleChatMessage(data) {
     }
 }
 
-function handleViewerJoined(data) {
+async function handleViewerJoined(data) {
     console.log('👥 Novo espectador:', data.viewerId);
+
+    const viewerId = data.viewerId;
+    if (!viewerId) return;
+
+    // Cria conexão WebRTC para o novo espectador
+    if (!peerConnections.has(viewerId)) {
+        try {
+            const pc = await createPeerConnection(viewerId);
+            peerConnections.set(viewerId, pc);
+        } catch (error) {
+            console.error(`❌ Erro ao criar conexão para ${viewerId}:`, error);
+        }
+    }
+
     updateViewerCount();
 }
 
 function handleViewerLeft(data) {
     console.log('👋 Espectador saiu:', data.viewerId);
+
+    const viewerId = data.viewerId;
+    const pc = peerConnections.get(viewerId);
+    if (pc) {
+        pc.close();
+        peerConnections.delete(viewerId);
+    }
+
     updateViewerCount();
 }
 
