@@ -35,9 +35,6 @@ func New() *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// WebSocket endpoint
-	mux.HandleFunc("/ws", s.handleWebSocket)
-
 	// API endpoints
 	mux.HandleFunc("/api/stats", s.handleStats)
 
@@ -50,8 +47,17 @@ func (s *Server) Handler() http.Handler {
 	// Segmentos HLS
 	mux.Handle("/hls/", http.StripPrefix("/hls/", http.FileServer(http.Dir("web/hls"))))
 
-	// Middleware de logging
-	return loggingMiddleware(corsMiddleware(mux))
+	// Middlewares para rotas HTTP comuns
+	wrapped := loggingMiddleware(corsMiddleware(mux))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ws" {
+			// Para WebSocket, evitar middlewares que possam quebrar o Hijacker
+			s.handleWebSocket(w, r)
+			return
+		}
+		wrapped.ServeHTTP(w, r)
+	})
 }
 
 // handleWebSocket gerencia conexões WebSocket

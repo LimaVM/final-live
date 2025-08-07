@@ -31,13 +31,17 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupPlayer() {
     const src = `/hls/${liveId}.m3u8`;
     if (Hls.isSupported()) {
-        const hls = new Hls({lowLatencyMode: true});
+        const hls = new Hls({ lowLatencyMode: true });
         hls.loadSource(src);
         hls.attachMedia(remoteVideo);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
             remoteVideo.play().catch(console.error);
         });
-        hls.on(Hls.Events.ERROR, () => {
+        hls.on(Hls.Events.ERROR, (_, data) => {
+            console.error('HLS error', data);
+            if (data && data.response && data.response.code === 404) {
+                showOfflineMessage('Transmissão não encontrada');
+            }
             updateConnectionStatus('disconnected', 'Erro na transmissão');
         });
     } else if (remoteVideo.canPlayType('application/vnd.apple.mpegurl')) {
