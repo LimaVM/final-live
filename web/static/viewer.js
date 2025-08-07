@@ -230,6 +230,11 @@ async function handleServerMessage(data) {
         case 'stream-started':
             updateConnectionStatus('connecting', 'Transmissão iniciada');
             break;
+        case 'stream-start':
+            // Stream já estava ativo ao entrar
+            updateConnectionStatus('connecting', 'Recebendo transmissão');
+            await handleStreamData(data.streamData);
+            break;
         case 'stream-ended':
             updateConnectionStatus('disconnected', 'Transmissão encerrada');
             showOfflineMessage('Transmissão encerrada pelo streamer');
