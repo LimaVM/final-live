@@ -47,6 +47,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Arquivos estáticos
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	// Segmentos HLS
+	mux.Handle("/hls/", http.StripPrefix("/hls/", http.FileServer(http.Dir("web/hls"))))
 
 	// Middleware de logging
 	return loggingMiddleware(corsMiddleware(mux))
@@ -127,28 +129,28 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 
 // loggingMiddleware adiciona logging às requisições HTTP
 func loggingMiddleware(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-                // Não faz wrapping em requisições WebSocket para evitar quebra do upgrade
-                if r.URL.Path == "/ws" {
-                        next.ServeHTTP(w, r)
-                        return
-                }
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Não faz wrapping em requisições WebSocket para evitar quebra do upgrade
+		if r.URL.Path == "/ws" {
+			next.ServeHTTP(w, r)
+			return
+		}
 
-                start := time.Now()
+		start := time.Now()
 
-                // Wrapper para capturar status code
-                wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
+		// Wrapper para capturar status code
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
 
-                next.ServeHTTP(wrapped, r)
+		next.ServeHTTP(wrapped, r)
 
-                duration := time.Since(start)
-                clientIP := getClientIP(r)
+		duration := time.Since(start)
+		clientIP := getClientIP(r)
 
-                // Log apenas para requisições não estáticas
-                if !strings.HasPrefix(r.URL.Path, "/static/") && r.URL.Path != "/favicon.ico" {
-                        log.Printf("📡 %s %s %d %v %s", r.Method, r.URL.Path, wrapped.statusCode, duration, clientIP)
-                }
-        })
+		// Log apenas para requisições não estáticas
+		if !strings.HasPrefix(r.URL.Path, "/static/") && r.URL.Path != "/favicon.ico" {
+			log.Printf("📡 %s %s %d %v %s", r.Method, r.URL.Path, wrapped.statusCode, duration, clientIP)
+		}
+	})
 }
 
 // corsMiddleware adiciona headers CORS

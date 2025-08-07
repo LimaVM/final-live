@@ -13,12 +13,11 @@ Este projeto foi **completamente refatorado** usando **Go no backend** e **JavaS
 - **Logs detalhados** de todas as operações
 - **Suporte SSL/TLS** para produção
 
-### **🎥 WebRTC Otimizado**
-- **Comunicação bidirecional** correta entre streamer e espectadores
-- **Múltiplas conexões simultâneas** para vários espectadores
-- **Gerenciamento inteligente** de ofertas, respostas e ICE candidates
-- **Reconexão automática** em caso de falha
-- **Qualidade adaptativa** (480p, 720p, 1080p)
+### **🎞️ Player HLS para espectadores**
+- **Reprodução via HLS** usando [hls.js](https://github.com/video-dev/hls.js)
+- **Sem conexões P2P**, o servidor entrega todos os segmentos
+- **Baixa latência** com atualização automática da playlist
+- **Qualidade máxima** sempre que disponível
 
 ### **💻 Frontend Moderno**
 - **JavaScript puro** otimizado para WebRTC
@@ -70,6 +69,15 @@ go test ./...
 - HTTPS na porta 443 com certificados SSL
 - Certificados esperados em: `/etc/letsencrypt/live/devlimassh.shop/`
 
+### **Gerando segmentos HLS**
+Use o [FFmpeg](https://ffmpeg.org/) para enviar o vídeo do streamer para o diretório de segmentos HLS:
+
+```bash
+ffmpeg -i input.mp4 -c:v copy -c:a copy -f hls -hls_time 1 -hls_list_size 4 -hls_flags delete_segments+append_list web/hls/ID_DA_LIVE.m3u8
+```
+
+Os arquivos `.ts` e `.m3u8` serão servidos automaticamente em `https://seu-dominio.com/hls/ID_DA_LIVE.m3u8`.
+
 ### **Parâmetros Opcionais:**
 ```bash
 ./motostream -http-port=8080 -https-port=8443 -cert=/path/to/cert.pem -key=/path/to/key.pem
@@ -91,7 +99,7 @@ go test ./...
 
 ### **3. Espectador (Viewer)**
 - URL: `/live/ID_DA_LIVE`
-- Recebe stream do streamer
+- Reproduz a transmissão via HLS (`/hls/ID_DA_LIVE.m3u8`)
 - Chat interativo
 - Controles de volume e tela cheia
 - Indicadores de qualidade
