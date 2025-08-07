@@ -26,7 +26,6 @@ type Session struct {
 	LiveID            string
 	Streamer          Connection
 	Viewers           map[Connection]bool
-	StreamData        interface{}
 	IsActive          bool
 	CreatedAt         time.Time
 	LastActivity      time.Time
@@ -100,7 +99,6 @@ func (m *Manager) RemoveStreamer(liveID string) {
 		session.mutex.Lock()
 		session.Streamer = nil
 		session.IsActive = false
-		session.StreamData = nil
 		session.mutex.Unlock()
 
 		// Remove sessão se não há mais viewers
@@ -181,34 +179,6 @@ func (m *Manager) GetViewers(liveID string) []Connection {
 }
 
 // SetStreamData define os dados do stream
-func (m *Manager) SetStreamData(liveID string, data interface{}) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if session, exists := m.sessions[liveID]; exists {
-		session.mutex.Lock()
-		session.StreamData = data
-		session.LastActivity = time.Now()
-		session.mutex.Unlock()
-	}
-}
-
-// GetActiveStream retorna os dados do stream ativo
-func (m *Manager) GetActiveStream(liveID string) interface{} {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-
-	if session, exists := m.sessions[liveID]; exists {
-		session.mutex.RLock()
-		defer session.mutex.RUnlock()
-
-		if session.IsActive {
-			return session.StreamData
-		}
-	}
-
-	return nil
-}
 
 // GetStats retorna estatísticas do servidor
 func (m *Manager) GetStats() Stats {

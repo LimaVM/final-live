@@ -339,6 +339,7 @@ async function createPeerConnection(viewerId) {
             ws.send(JSON.stringify({
                 type: 'stream-data',
                 liveId: liveId,
+                viewerId: viewerId,
                 streamData: {
                     type: 'ice-candidate',
                     candidate: event.candidate
@@ -382,6 +383,7 @@ async function createPeerConnection(viewerId) {
             ws.send(JSON.stringify({
                 type: 'stream-data',
                 liveId: liveId,
+                viewerId: viewerId,
                 streamData: {
                     type: 'offer',
                     offer: offer

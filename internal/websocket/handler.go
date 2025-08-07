@@ -237,13 +237,13 @@ func (c *Connection) handleJoin(msg *Message) {
 	// Atualiza contagem de espectadores para todos
 	c.handler.broadcastViewerCount(c.LiveID)
 
-	// Se há stream ativo, envia para o novo espectador
-	if streamData := c.handler.streamManager.GetActiveStream(c.LiveID); streamData != nil {
+	// Se há streamer ativo, informa o espectador
+	if c.handler.streamManager.GetStreamer(c.LiveID) != nil {
 		c.sendMessage(&stream.Message{
-			Type:       "stream-start",
-			StreamData: streamData,
+			Type:    "stream-started",
+			Message: "Transmissão iniciada",
 		})
-		log.Printf("📺 Stream ativo enviado para %s", c.UserID)
+		log.Printf("📺 Streamer ativo, aguardando oferta para %s", c.UserID)
 	}
 }
 
@@ -293,19 +293,33 @@ func (c *Connection) handleStreamData(msg *Message) {
 
 	if c.UserType == "streamer" {
 		// Streamer enviando dados para espectadores
-		c.handler.streamManager.SetStreamData(c.LiveID, msg.StreamData)
-
 		viewers := c.handler.streamManager.GetViewers(c.LiveID)
-		for _, viewer := range viewers {
-			if conn, ok := viewer.(*Connection); ok {
-				conn.sendMessage(&stream.Message{
-					Type:       "stream-data",
-					StreamData: msg.StreamData,
-				})
-			}
-		}
 
-		log.Printf("📤 Stream data distribuído para %d espectadores", len(viewers))
+		// Se especificado, envia apenas para o espectador alvo
+		if msg.ViewerID != "" {
+			for _, viewer := range viewers {
+				if conn, ok := viewer.(*Connection); ok && conn.UserID == msg.ViewerID {
+					conn.sendMessage(&stream.Message{
+						Type:       "stream-data",
+						StreamData: msg.StreamData,
+						ViewerID:   msg.ViewerID,
+					})
+					log.Printf("📤 Stream data enviado para espectador %s", msg.ViewerID)
+					break
+				}
+			}
+		} else {
+			// Caso contrário, envia para todos
+			for _, viewer := range viewers {
+				if conn, ok := viewer.(*Connection); ok {
+					conn.sendMessage(&stream.Message{
+						Type:       "stream-data",
+						StreamData: msg.StreamData,
+					})
+				}
+			}
+			log.Printf("📤 Stream data distribuído para %d espectadores", len(viewers))
+		}
 
 	} else if c.UserType == "viewer" {
 		// Espectador enviando resposta para streamer

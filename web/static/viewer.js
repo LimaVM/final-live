@@ -243,6 +243,7 @@ async function handleServerMessage(data) {
             showOfflineMessage('Transmissão encerrada pelo streamer');
             break;
         case 'stream-data':
+            if (data.viewerId && data.viewerId !== viewerId) return;
             await handleStreamData(data.streamData);
             break;
         case 'chat':
@@ -316,17 +317,15 @@ async function createPeerConnection() {
     pc.ontrack = (event) => {
         console.log('📺 Stream recebido do streamer');
         const [remoteStream] = event.streams;
-        
-        if (remoteStream) {
+
+        if (remoteStream && remoteVideo.srcObject !== remoteStream) {
             remoteVideo.srcObject = remoteStream;
             hideVideoPlaceholder();
             updateConnectionStatus('connected', 'Recebendo transmissão');
             isConnected = true;
-            
-            // Força reprodução
+
             remoteVideo.play().catch(error => {
                 console.log('⚠️  Reprodução automática bloqueada:', error);
-                // Mostra botão de play se necessário
                 showPlayButton();
             });
         }
