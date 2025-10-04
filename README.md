@@ -13,12 +13,11 @@ Este projeto foi **completamente refatorado** usando **Go no backend** e **JavaS
 - **Logs detalhados** de todas as operações
 - **Suporte SSL/TLS** para produção
 
-### **🎥 WebRTC Otimizado**
-- **Comunicação bidirecional** correta entre streamer e espectadores
-- **Múltiplas conexões simultâneas** para vários espectadores
-- **Gerenciamento inteligente** de ofertas, respostas e ICE candidates
-- **Reconexão automática** em caso de falha
-- **Qualidade adaptativa** (480p, 720p, 1080p)
+### **🎞️ Player HLS para espectadores**
+- **Reprodução via HLS** usando [hls.js](https://github.com/video-dev/hls.js)
+- **Sem conexões P2P**, o servidor entrega todos os segmentos
+- **Baixa latência** com atualização automática da playlist
+- **Qualidade máxima** sempre que disponível
 
 ### **💻 Frontend Moderno**
 - **JavaScript puro** otimizado para WebRTC
@@ -30,12 +29,27 @@ Este projeto foi **completamente refatorado** usando **Go no backend** e **JavaS
 ## 🔧 **Como Usar:**
 
 ### **Compilação:**
-```bash
-# Instalar Go (já incluído no projeto)
-cd motostream_go
 
-# Compilar o projeto
+#### **Ubuntu 22.04+**
+```bash
+sudo apt update
+sudo apt install -y git golang ffmpeg
+git clone https://github.com/devlima/motostream_go.git
+cd motostream_go
 go build -o motostream ./cmd/main.go
+```
+
+#### **Arch Linux**
+```bash
+sudo pacman -Sy --noconfirm git go ffmpeg
+git clone https://github.com/devlima/motostream_go.git
+cd motostream_go
+go build -o motostream ./cmd/main.go
+```
+
+#### **Verificação**
+```bash
+go test ./...
 ```
 
 ### **Execução:**
@@ -54,6 +68,18 @@ go build -o motostream ./cmd/main.go
 - HTTP na porta 80 (redirecionamento para HTTPS)
 - HTTPS na porta 443 com certificados SSL
 - Certificados esperados em: `/etc/letsencrypt/live/devlimassh.shop/`
+
+### **Gerando segmentos HLS**
+Use o [FFmpeg](https://ffmpeg.org/) para gerar e enviar os segmentos diretamente ao servidor via **HTTP PUT**:
+
+```bash
+ffmpeg -re -i input.mp4 \
+  -c:v libx264 -preset veryfast -c:a aac \
+  -f hls -hls_time 1 -hls_list_size 4 -hls_flags delete_segments+append_list \
+  -method PUT http://seu-dominio.com/hls/ID_DA_LIVE.m3u8
+```
+
+O FFmpeg irá enviar o arquivo `.m3u8` e os segmentos `.ts` para o servidor, que os salvará em `web/hls/` e os servirá automaticamente em `https://seu-dominio.com/hls/ID_DA_LIVE.m3u8`.
 
 ### **Parâmetros Opcionais:**
 ```bash
@@ -76,7 +102,7 @@ go build -o motostream ./cmd/main.go
 
 ### **3. Espectador (Viewer)**
 - URL: `/live/ID_DA_LIVE`
-- Recebe stream do streamer
+- Reproduz a transmissão via HLS (`/hls/ID_DA_LIVE.m3u8`)
 - Chat interativo
 - Controles de volume e tela cheia
 - Indicadores de qualidade

@@ -31,6 +31,7 @@ type Connection struct {
 	LiveID    string
 	UserType  string // "streamer" ou "viewer"
 	UserID    string
+	Name      string
 	Connected time.Time
 	LastPing  time.Time
 	send      chan []byte
@@ -72,21 +73,21 @@ func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 	log.Printf("   Connection: %s", r.Header.Get("Connection"))
 	log.Printf("   Sec-WebSocket-Key: %s", r.Header.Get("Sec-WebSocket-Key"))
 	log.Printf("   Sec-WebSocket-Version: %s", r.Header.Get("Sec-WebSocket-Version"))
-	
+
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("❌ Erro ao fazer upgrade WebSocket: %v", err)
 		log.Printf("   Headers de resposta: %+v", w.Header())
 		return
 	}
-	
+
 	log.Printf("✅ WebSocket upgrade bem-sucedido")
-	
+
 	h.mutex.Lock()
 	h.connCounter++
 	connID := fmt.Sprintf("conn_%d", h.connCounter)
 	h.mutex.Unlock()
-	
+
 	// Cria conexão
 	connection := &Connection{
 		ID:        connID,
@@ -98,17 +99,17 @@ func (h *Handler) HandleConnection(w http.ResponseWriter, r *http.Request) {
 		send:      make(chan []byte, 256),
 		handler:   h,
 	}
-	
+
 	// Registra conexão
 	h.mutex.Lock()
 	h.connections[conn] = connection
 	h.mutex.Unlock()
-	
+
 	log.Printf("🔌 NOVA CONEXÃO WEBSOCKET")
 	log.Printf("   ID: %s", connID)
 	log.Printf("   IP: %s", connection.IP)
 	log.Printf("   Total conexões: %d", len(h.connections))
-	
+
 	// Inicia goroutines para leitura e escrita
 	go connection.writePump()
 	go connection.readPump()
@@ -120,7 +121,7 @@ func (c *Connection) readPump() {
 		c.handler.unregisterConnection(c)
 		c.Conn.Close()
 	}()
-	
+
 	// Configura timeouts
 	c.Conn.SetReadLimit(512 * 1024) // 512KB
 	c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -129,7 +130,7 @@ func (c *Connection) readPump() {
 		c.LastPing = time.Now()
 		return nil
 	})
-	
+
 	for {
 		_, messageBytes, err := c.Conn.ReadMessage()
 		if err != nil {
@@ -138,13 +139,13 @@ func (c *Connection) readPump() {
 			}
 			break
 		}
-		
+
 		var msg Message
 		if err := json.Unmarshal(messageBytes, &msg); err != nil {
 			log.Printf("⚠️  JSON inválido de %s: %v", c.ID, err)
 			continue
 		}
-		
+
 		log.Printf("📨 Mensagem recebida de %s: %s", c.ID, msg.Type)
 		c.handleMessage(&msg)
 	}
@@ -157,7 +158,7 @@ func (c *Connection) writePump() {
 		ticker.Stop()
 		c.Conn.Close()
 	}()
-	
+
 	for {
 		select {
 		case message, ok := <-c.send:
@@ -166,12 +167,12 @@ func (c *Connection) writePump() {
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			
+
 			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				log.Printf("❌ Erro ao enviar mensagem para %s: %v", c.ID, err)
 				return
 			}
-			
+
 		case <-ticker.C:
 			c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -204,25 +205,45 @@ func (c *Connection) handleJoin(msg *Message) {
 	c.LiveID = msg.LiveID
 	c.UserType = "viewer"
 	c.UserID = msg.ViewerID
+	c.Name = msg.Name
 	if c.UserID == "" {
 		c.UserID = c.ID
 	}
-	
+	if c.Name == "" {
+		c.Name = c.UserID
+	}
+
 	log.Printf("👥 ESPECTADOR ENTROU NA LIVE")
 	log.Printf("   Live ID: %s", c.LiveID)
 	log.Printf("   User ID: %s", c.UserID)
+	log.Printf("   Nome: %s", c.Name)
 	log.Printf("   IP: %s", c.IP)
-	
+
 	// Registra no gerenciador de streams
 	c.handler.streamManager.AddViewer(c.LiveID, c)
-	
-	// Se há stream ativo, envia para o novo espectador
-	if streamData := c.handler.streamManager.GetActiveStream(c.LiveID); streamData != nil {
+
+	// Notifica streamer sobre novo espectador
+	if streamer := c.handler.streamManager.GetStreamer(c.LiveID); streamer != nil {
+		if conn, ok := streamer.(*Connection); ok {
+			conn.sendMessage(&stream.Message{
+				Type:     "viewer-joined",
+				LiveID:   c.LiveID,
+				ViewerID: c.UserID,
+				Name:     c.Name,
+			})
+		}
+	}
+
+	// Atualiza contagem de espectadores para todos
+	c.handler.broadcastViewerCount(c.LiveID)
+
+	// Se há streamer ativo, informa o espectador
+	if c.handler.streamManager.GetStreamer(c.LiveID) != nil {
 		c.sendMessage(&stream.Message{
-			Type:       "stream-start",
-			StreamData: streamData,
+			Type:    "stream-started",
+			Message: "Transmissão iniciada",
 		})
-		log.Printf("📺 Stream ativo enviado para %s", c.UserID)
+		log.Printf("📺 Streamer ativo, aguardando oferta para %s", c.UserID)
 	}
 }
 
@@ -231,11 +252,11 @@ func (c *Connection) handleStreamerStart(msg *Message) {
 	c.LiveID = msg.LiveID
 	c.UserType = "streamer"
 	c.UserID = fmt.Sprintf("streamer_%s", c.LiveID)
-	
+
 	log.Printf("🎥 STREAMER INICIOU TRANSMISSÃO")
 	log.Printf("   Live ID: %s", c.LiveID)
 	log.Printf("   IP: %s", c.IP)
-	
+
 	// Registra no gerenciador de streams
 	if err := c.handler.streamManager.SetStreamer(c.LiveID, c); err != nil {
 		log.Printf("⚠️  Erro ao registrar streamer: %v", err)
@@ -245,18 +266,21 @@ func (c *Connection) handleStreamerStart(msg *Message) {
 		})
 		return
 	}
-	
+
 	// Notifica espectadores
 	viewers := c.handler.streamManager.GetViewers(c.LiveID)
-		for _, viewer := range viewers {
-			if conn, ok := viewer.(*Connection); ok {
-				conn.sendMessage(&stream.Message{
-					Type:    "stream-started",
-					Message: "Transmissão iniciada",
-				})
-			}
+	for _, viewer := range viewers {
+		if conn, ok := viewer.(*Connection); ok {
+			conn.sendMessage(&stream.Message{
+				Type:    "stream-started",
+				Message: "Transmissão iniciada",
+			})
 		}
-	
+	}
+
+	// Atualiza contagem de espectadores
+	c.handler.broadcastViewerCount(c.LiveID)
+
 	log.Printf("📢 Notificação enviada para %d espectadores", len(viewers))
 }
 
@@ -266,23 +290,37 @@ func (c *Connection) handleStreamData(msg *Message) {
 		log.Printf("🚫 Stream data sem live ID de %s", c.ID)
 		return
 	}
-	
+
 	if c.UserType == "streamer" {
 		// Streamer enviando dados para espectadores
-		c.handler.streamManager.SetStreamData(c.LiveID, msg.StreamData)
-		
 		viewers := c.handler.streamManager.GetViewers(c.LiveID)
-		for _, viewer := range viewers {
-			if conn, ok := viewer.(*Connection); ok {
-				conn.sendMessage(&stream.Message{
-					Type:       "stream-data",
-					StreamData: msg.StreamData,
-				})
+
+		// Se especificado, envia apenas para o espectador alvo
+		if msg.ViewerID != "" {
+			for _, viewer := range viewers {
+				if conn, ok := viewer.(*Connection); ok && conn.UserID == msg.ViewerID {
+					conn.sendMessage(&stream.Message{
+						Type:       "stream-data",
+						StreamData: msg.StreamData,
+						ViewerID:   msg.ViewerID,
+					})
+					log.Printf("📤 Stream data enviado para espectador %s", msg.ViewerID)
+					break
+				}
 			}
+		} else {
+			// Caso contrário, envia para todos
+			for _, viewer := range viewers {
+				if conn, ok := viewer.(*Connection); ok {
+					conn.sendMessage(&stream.Message{
+						Type:       "stream-data",
+						StreamData: msg.StreamData,
+					})
+				}
+			}
+			log.Printf("📤 Stream data distribuído para %d espectadores", len(viewers))
 		}
-		
-		log.Printf("📤 Stream data distribuído para %d espectadores", len(viewers))
-		
+
 	} else if c.UserType == "viewer" {
 		// Espectador enviando resposta para streamer
 		if streamer := c.handler.streamManager.GetStreamer(c.LiveID); streamer != nil {
@@ -303,9 +341,9 @@ func (c *Connection) handleChat(msg *Message) {
 	if c.LiveID == "" {
 		return
 	}
-	
+
 	log.Printf("💬 CHAT [%s] %s: %s", c.LiveID, msg.Name, msg.Message)
-	
+
 	// Envia para todos na live
 	chatMsg := &stream.Message{
 		Type:      "chat",
@@ -314,14 +352,14 @@ func (c *Connection) handleChat(msg *Message) {
 		Timestamp: msg.Timestamp,
 		LiveID:    c.LiveID,
 	}
-	
+
 	// Para o streamer
 	if streamer := c.handler.streamManager.GetStreamer(c.LiveID); streamer != nil {
 		if conn, ok := streamer.(*Connection); ok {
 			conn.sendMessage(chatMsg)
 		}
 	}
-	
+
 	// Para todos os espectadores
 	viewers := c.handler.streamManager.GetViewers(c.LiveID)
 	for _, viewer := range viewers {
@@ -329,7 +367,7 @@ func (c *Connection) handleChat(msg *Message) {
 			conn.sendMessage(chatMsg)
 		}
 	}
-	
+
 	log.Printf("   📤 Enviado para %d usuários", len(viewers)+1)
 }
 
@@ -351,7 +389,7 @@ func (c *Connection) sendMessage(msg *stream.Message) {
 		log.Printf("❌ Erro ao serializar mensagem: %v", err)
 		return
 	}
-	
+
 	select {
 	case c.send <- data:
 	default:
@@ -363,16 +401,16 @@ func (c *Connection) sendMessage(msg *stream.Message) {
 func (h *Handler) unregisterConnection(c *Connection) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	
+
 	if _, ok := h.connections[c.Conn]; ok {
 		delete(h.connections, c.Conn)
 		close(c.send)
-		
+
 		// Remove do gerenciador de streams
 		if c.LiveID != "" {
 			if c.UserType == "streamer" {
 				h.streamManager.RemoveStreamer(c.LiveID)
-				
+
 				// Notifica espectadores
 				viewers := h.streamManager.GetViewers(c.LiveID)
 				for _, viewer := range viewers {
@@ -383,23 +421,63 @@ func (h *Handler) unregisterConnection(c *Connection) {
 						})
 					}
 				}
-				
+
+				// Atualiza contagem
+				h.broadcastViewerCount(c.LiveID)
+
 				log.Printf("🎥 STREAMER DESCONECTOU")
 				log.Printf("   Live ID: %s", c.LiveID)
 				log.Printf("   IP: %s", c.IP)
 				log.Printf("   📢 Notificação enviada para %d espectadores", len(viewers))
-				
+
 			} else if c.UserType == "viewer" {
 				h.streamManager.RemoveViewer(c.LiveID, c)
-				
+
+				// Notifica streamer
+				if streamer := h.streamManager.GetStreamer(c.LiveID); streamer != nil {
+					if conn, ok := streamer.(*Connection); ok {
+						conn.sendMessage(&stream.Message{
+							Type:     "viewer-left",
+							LiveID:   c.LiveID,
+							ViewerID: c.UserID,
+							Name:     c.Name,
+						})
+					}
+				}
+
+				// Atualiza contagem
+				h.broadcastViewerCount(c.LiveID)
+
 				log.Printf("👥 ESPECTADOR DESCONECTOU")
 				log.Printf("   Live ID: %s", c.LiveID)
 				log.Printf("   User ID: %s", c.UserID)
+				log.Printf("   Nome: %s", c.Name)
 				log.Printf("   IP: %s", c.IP)
 			}
 		}
-		
+
 		log.Printf("🔌 Conexão %s desconectada (total: %d)", c.ID, len(h.connections))
+	}
+}
+
+// broadcastViewerCount envia a contagem de espectadores para streamer e viewers
+func (h *Handler) broadcastViewerCount(liveID string) {
+	viewers := h.streamManager.GetViewers(liveID)
+	count := len(viewers)
+	msg := &stream.Message{Type: "viewer-count", LiveID: liveID, Count: count}
+
+	// Para o streamer
+	if streamer := h.streamManager.GetStreamer(liveID); streamer != nil {
+		if conn, ok := streamer.(*Connection); ok {
+			conn.sendMessage(msg)
+		}
+	}
+
+	// Para todos os espectadores
+	for _, viewer := range viewers {
+		if conn, ok := viewer.(*Connection); ok {
+			conn.sendMessage(msg)
+		}
 	}
 }
 
@@ -413,4 +491,3 @@ func getClientIP(r *http.Request) string {
 	}
 	return strings.Split(r.RemoteAddr, ":")[0]
 }
-

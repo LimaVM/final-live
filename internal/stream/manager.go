@@ -7,7 +7,7 @@ import (
 )
 
 // Connection interface para conexões WebSocket
-type Connection interface {}
+type Connection interface{}
 
 // Message representa uma mensagem para envio
 type Message struct {
@@ -18,6 +18,7 @@ type Message struct {
 	Name       string      `json:"name,omitempty"`
 	Message    string      `json:"message,omitempty"`
 	Timestamp  string      `json:"timestamp,omitempty"`
+	Count      int         `json:"count,omitempty"`
 }
 
 // Session representa uma sessão de streaming
@@ -25,7 +26,6 @@ type Session struct {
 	LiveID            string
 	Streamer          Connection
 	Viewers           map[Connection]bool
-	StreamData        interface{}
 	IsActive          bool
 	CreatedAt         time.Time
 	LastActivity      time.Time
@@ -46,20 +46,20 @@ type Stats struct {
 	TotalStreamers   int                    `json:"totalStreamers"`
 	TotalViewers     int                    `json:"totalViewers"`
 	SessionDetails   map[string]SessionInfo `json:"sessionDetails"`
-	Uptime          string                 `json:"uptime"`
+	Uptime           string                 `json:"uptime"`
 	TotalConnections int                    `json:"totalConnections"`
 }
 
 // SessionInfo representa informações de uma sessão
 type SessionInfo struct {
-	LiveID            string    `json:"liveId"`
-	IsActive          bool      `json:"isActive"`
-	ViewersCount      int       `json:"viewersCount"`
-	PeakViewers       int       `json:"peakViewers"`
-	TotalViewers      int       `json:"totalViewers"`
-	CreatedAt         time.Time `json:"createdAt"`
-	LastActivity      time.Time `json:"lastActivity"`
-	Duration          string    `json:"duration"`
+	LiveID       string    `json:"liveId"`
+	IsActive     bool      `json:"isActive"`
+	ViewersCount int       `json:"viewersCount"`
+	PeakViewers  int       `json:"peakViewers"`
+	TotalViewers int       `json:"totalViewers"`
+	CreatedAt    time.Time `json:"createdAt"`
+	LastActivity time.Time `json:"lastActivity"`
+	Duration     string    `json:"duration"`
 }
 
 var startTime = time.Now()
@@ -75,18 +75,18 @@ func NewManager() *Manager {
 func (m *Manager) SetStreamer(liveID string, conn Connection) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	session := m.getOrCreateSession(liveID)
-	
+
 	// Verifica se já há um streamer ativo
 	if session.Streamer != nil && session.IsActive {
 		return fmt.Errorf("já existe um streamer ativo nesta live")
 	}
-	
+
 	session.Streamer = conn
 	session.IsActive = true
 	session.LastActivity = time.Now()
-	
+
 	return nil
 }
 
@@ -94,14 +94,13 @@ func (m *Manager) SetStreamer(liveID string, conn Connection) error {
 func (m *Manager) RemoveStreamer(liveID string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	if session, exists := m.sessions[liveID]; exists {
 		session.mutex.Lock()
 		session.Streamer = nil
 		session.IsActive = false
-		session.StreamData = nil
 		session.mutex.Unlock()
-		
+
 		// Remove sessão se não há mais viewers
 		if len(session.Viewers) == 0 {
 			delete(m.sessions, liveID)
@@ -113,14 +112,14 @@ func (m *Manager) RemoveStreamer(liveID string) {
 func (m *Manager) AddViewer(liveID string, conn Connection) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	session := m.getOrCreateSession(liveID)
-	
+
 	session.mutex.Lock()
 	session.Viewers[conn] = true
 	session.TotalViewersCount++
 	session.LastActivity = time.Now()
-	
+
 	// Atualiza pico de espectadores
 	currentViewers := len(session.Viewers)
 	if currentViewers > session.PeakViewers {
@@ -133,12 +132,12 @@ func (m *Manager) AddViewer(liveID string, conn Connection) {
 func (m *Manager) RemoveViewer(liveID string, conn Connection) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	if session, exists := m.sessions[liveID]; exists {
 		session.mutex.Lock()
 		delete(session.Viewers, conn)
 		session.mutex.Unlock()
-		
+
 		// Remove sessão se não há mais streamer nem viewers
 		if session.Streamer == nil && len(session.Viewers) == 0 {
 			delete(m.sessions, liveID)
@@ -150,13 +149,13 @@ func (m *Manager) RemoveViewer(liveID string, conn Connection) {
 func (m *Manager) GetStreamer(liveID string) Connection {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	if session, exists := m.sessions[liveID]; exists {
 		session.mutex.RLock()
 		defer session.mutex.RUnlock()
 		return session.Streamer
 	}
-	
+
 	return nil
 }
 
@@ -164,76 +163,52 @@ func (m *Manager) GetStreamer(liveID string) Connection {
 func (m *Manager) GetViewers(liveID string) []Connection {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	if session, exists := m.sessions[liveID]; exists {
 		session.mutex.RLock()
 		defer session.mutex.RUnlock()
-		
+
 		viewers := make([]Connection, 0, len(session.Viewers))
 		for viewer := range session.Viewers {
 			viewers = append(viewers, viewer)
 		}
 		return viewers
 	}
-	
+
 	return nil
 }
 
 // SetStreamData define os dados do stream
-func (m *Manager) SetStreamData(liveID string, data interface{}) {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-	
-	if session, exists := m.sessions[liveID]; exists {
-		session.mutex.Lock()
-		session.StreamData = data
-		session.LastActivity = time.Now()
-		session.mutex.Unlock()
-	}
-}
-
-// GetActiveStream retorna os dados do stream ativo
-func (m *Manager) GetActiveStream(liveID string) interface{} {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-	
-	if session, exists := m.sessions[liveID]; exists {
-		session.mutex.RLock()
-		defer session.mutex.RUnlock()
-		
-		if session.IsActive {
-			return session.StreamData
-		}
-	}
-	
-	return nil
-}
 
 // GetStats retorna estatísticas do servidor
 func (m *Manager) GetStats() Stats {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	stats := Stats{
 		ActiveSessions:   0,
 		TotalStreamers:   0,
 		TotalViewers:     0,
 		SessionDetails:   make(map[string]SessionInfo),
-		Uptime:          time.Since(startTime).String(),
+		Uptime:           time.Since(startTime).String(),
 		TotalConnections: 0,
 	}
-	
+
 	for liveID, session := range m.sessions {
 		session.mutex.RLock()
-		
+
 		viewersCount := len(session.Viewers)
 		stats.TotalViewers += viewersCount
-		
+		stats.TotalConnections += viewersCount
+
 		if session.IsActive {
 			stats.ActiveSessions++
-			stats.TotalStreamers++
+			if session.Streamer != nil {
+				stats.TotalStreamers++
+				stats.TotalConnections++
+			}
 		}
-		
+
 		stats.SessionDetails[liveID] = SessionInfo{
 			LiveID:       liveID,
 			IsActive:     session.IsActive,
@@ -244,10 +219,10 @@ func (m *Manager) GetStats() Stats {
 			LastActivity: session.LastActivity,
 			Duration:     time.Since(session.CreatedAt).String(),
 		}
-		
+
 		session.mutex.RUnlock()
 	}
-	
+
 	return stats
 }
 
@@ -256,15 +231,14 @@ func (m *Manager) getOrCreateSession(liveID string) *Session {
 	if session, exists := m.sessions[liveID]; exists {
 		return session
 	}
-	
+
 	session := &Session{
 		LiveID:       liveID,
 		Viewers:      make(map[Connection]bool),
 		CreatedAt:    time.Now(),
 		LastActivity: time.Now(),
 	}
-	
+
 	m.sessions[liveID] = session
 	return session
 }
-

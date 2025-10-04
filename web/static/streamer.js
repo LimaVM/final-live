@@ -109,8 +109,9 @@ function setupInterface() {
     cameraSwitch.addEventListener('change', async (e) => {
         await switchCamera(e.target.value);
     });
-    
+
     // Seletor de qualidade
+    qualitySwitch.value = '1080p';
     qualitySwitch.addEventListener('change', async (e) => {
         await changeQuality(e.target.value);
     });
@@ -281,6 +282,9 @@ async function handleServerMessage(data) {
         case 'viewer-left':
             handleViewerLeft(data);
             break;
+        case 'viewer-count':
+            viewerCount.textContent = data.count || 0;
+            break;
         case 'error':
             console.error('❌ Erro do servidor:', data.message);
             alert(data.message);
@@ -335,6 +339,7 @@ async function createPeerConnection(viewerId) {
             ws.send(JSON.stringify({
                 type: 'stream-data',
                 liveId: liveId,
+                viewerId: viewerId,
                 streamData: {
                     type: 'ice-candidate',
                     candidate: event.candidate
@@ -378,6 +383,7 @@ async function createPeerConnection(viewerId) {
             ws.send(JSON.stringify({
                 type: 'stream-data',
                 liveId: liveId,
+                viewerId: viewerId,
                 streamData: {
                     type: 'offer',
                     offer: offer
@@ -541,13 +547,35 @@ function handleChatMessage(data) {
     }
 }
 
-function handleViewerJoined(data) {
+async function handleViewerJoined(data) {
     console.log('👥 Novo espectador:', data.viewerId);
+
+    const viewerId = data.viewerId;
+    if (!viewerId) return;
+
+    // Cria conexão WebRTC para o novo espectador
+    if (!peerConnections.has(viewerId)) {
+        try {
+            const pc = await createPeerConnection(viewerId);
+            peerConnections.set(viewerId, pc);
+        } catch (error) {
+            console.error(`❌ Erro ao criar conexão para ${viewerId}:`, error);
+        }
+    }
+
     updateViewerCount();
 }
 
 function handleViewerLeft(data) {
     console.log('👋 Espectador saiu:', data.viewerId);
+
+    const viewerId = data.viewerId;
+    const pc = peerConnections.get(viewerId);
+    if (pc) {
+        pc.close();
+        peerConnections.delete(viewerId);
+    }
+
     updateViewerCount();
 }
 
